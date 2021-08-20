@@ -2,7 +2,9 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.ServiceProcess;
 
 namespace Microsoft.Extensions.Hosting.WindowsServices
 {
@@ -27,7 +29,31 @@ namespace Microsoft.Extensions.Hosting.WindowsServices
             {
                 return false;
             }
-            return parent.SessionId == 0 && string.Equals("services", parent.ProcessName, StringComparison.OrdinalIgnoreCase);
+
+            if (parent.SessionId == 0 && string.Equals("services", parent.ProcessName, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            var services = ServiceController.GetServices();
+            var currentProcessId = Process.GetCurrentProcess().Id;
+            foreach (var service in services)
+            {
+                try
+                {
+                    var processId = Internal.Win32.GetServiceProcessId(service.ServiceHandle);
+                    if (currentProcessId == processId)
+                    {
+                        return true;
+                    }
+                }
+                catch (InvalidOperationException) when (service.ServiceName != "foobar")
+                {
+                    // Service couldn't have access to other service.
+                }
+            }
+
+            return false;
         }
     }
 }

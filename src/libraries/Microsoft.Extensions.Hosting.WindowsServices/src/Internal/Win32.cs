@@ -4,11 +4,17 @@
 using System;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.ServiceProcess;
 
 namespace Microsoft.Extensions.Hosting.WindowsServices.Internal
 {
     internal static class Win32
     {
+        private const int SC_STATUS_PROCESS_INFO = 0;
+
+        [DllImport("advapi32", EntryPoint = "QueryServiceStatusEx", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern bool QueryServiceStatusEx(SafeHandle serviceHandle, int infoLevel, ref SERVICE_STATUS_PROCESS buffer, int bufferSize, out int bytesNeeded);
+
         // https://docs.microsoft.com/en-us/windows/desktop/api/tlhelp32/nf-tlhelp32-createtoolhelp32snapshot
         [DllImport("kernel32", SetLastError = true)]
         private static extern IntPtr CreateToolhelp32Snapshot(SnapshotFlags dwFlags, uint th32ProcessID);
@@ -24,6 +30,17 @@ namespace Microsoft.Extensions.Hosting.WindowsServices.Internal
         [DllImport("kernel32", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool CloseHandle([In] IntPtr hObject);
+
+        internal static unsafe int GetServiceProcessId(SafeHandle serviceHandle)
+        {
+            SERVICE_STATUS_PROCESS ssp = default;
+            if (QueryServiceStatusEx(serviceHandle, SC_STATUS_PROCESS_INFO, ref ssp, sizeof(SERVICE_STATUS_PROCESS), out _))
+            {
+                return (int)ssp.dwProcessId;
+            }
+
+            return -1;
+        }
 
         internal static Process GetParentProcess()
         {
@@ -70,6 +87,20 @@ namespace Microsoft.Extensions.Hosting.WindowsServices.Internal
             All = (HeapList | Process | Thread | Module),
             Inherit = 0x80000000,
             NoHeaps = 0x40000000
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        internal struct SERVICE_STATUS_PROCESS
+        {
+            public uint dwServiceType;
+            public uint dwCurrentState;
+            public uint dwControlsAccepted;
+            public uint dwWin32ExitCode;
+            public uint dwServiceSpecificExitCode;
+            public uint dwCheckPoint;
+            public uint dwWaitHint;
+            public uint dwProcessId;
+            public uint dwServiceFlags;
         }
 
         [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
